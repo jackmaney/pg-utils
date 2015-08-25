@@ -1,5 +1,5 @@
 import setuptools
-from pg_utils._version import __version__
+from pg_utils import __version__
 
 try:
     with open("README.rst") as f:
@@ -7,16 +7,20 @@ try:
 except IOError:
     long_description = ""
 
-requirements = [
-    "psycopg2",
-    "click",
-    "pandas"
-]
+try:
+    with open("requirements.txt") as f:
+        requirements = [x.strip() for x in f.read().splitlines() if x.strip()]
+except OSError:
+    requirements = []
 
 setuptools.setup(
     name="pg-utils",
     author="Jack Maney",
+    author_email="jackmaney@gmail.com",
     version=__version__,
     install_requires=requirements,
-    packages=setuptools.find_packages()
+    packages=setuptools.find_packages(),
+    url="https://github.com/jackmaney/pg-utils",
+    license="MIT",
+    description="Utility libraries for working with PostgreSQL"
 )
