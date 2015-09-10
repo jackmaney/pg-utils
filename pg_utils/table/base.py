@@ -1,8 +1,15 @@
+from .. import template_dir
+from jinja2 import Environment, FileSystemLoader
 from ..exception import TableDoesNotExistError
 import pandas as pd
+import re
 import six
+from lazy_property import LazyProperty
 
 __all__ = ["Table"]
+
+def _pretty_print(query):
+    print("\n".join([line for line in re.split("\r?\n", query) if not re.match("^\s*$", line)]))
 
 _numeric_datatypes = [
     "smallint",
@@ -17,6 +24,8 @@ _numeric_datatypes = [
     "float"
 ]
 
+_env = Environment(loader=FileSystemLoader(template_dir))
+_describe_template = _env.get_template("describe.j2")
 
 class Table(object):
     """
@@ -32,7 +41,7 @@ class Table(object):
     as found in the ``columns`` attribute above).
     """
 
-    def __init__(self, conn, schema, table_name):
+    def __init__(self, conn, schema, table_name, debug=False):
 
         self.conn = conn
         self._schema = schema
@@ -44,6 +53,7 @@ class Table(object):
             ))
 
         self._num_rows = None
+        self.debug = debug
 
         self._get_column_data()
 
@@ -92,8 +102,7 @@ class Table(object):
         """
 
         if (not isinstance(num_rows, six.integer_types) or num_rows <= 0) and \
-                num_rows != "all":
-
+                        num_rows != "all":
             raise ValueError(
                 "'num_rows': Expected a positive integer or 'all'")
 
@@ -104,13 +113,64 @@ class Table(object):
 
         return pd.read_sql(query, self.conn, **kwargs)
 
+    @LazyProperty
     def count(self):
         """Returns the number of rows in the corresponding database table."""
         cur = self.conn.cursor()
 
-        cur.execute("select count(1) from {}".format(self.name))
+        cur.execute("select count(1) from {}".format(self))
 
         return cur.fetchone()[0]
+
+    def describe(self, columns=None, percentiles=None, type_="continuous"):
+
+        if columns is None:
+            columns = self.numeric_columns
+        elif any([x not in self.numeric_columns for x in columns]):
+            raise ValueError("Not all columns in {} found in the numeric columns of {}".format(
+                columns, self
+            ))
+
+        if percentiles is None:
+            percentiles = [0.25, 0.5, 0.75]
+        elif any([x < 0 or x > 1 for x in percentiles]):
+            raise ValueError(
+                "The `percentiles` attribute must be None or consist of numbers between 0 and 1 (got {})".format(
+                    percentiles))
+
+        percentiles = [float("{0:.2f}".format(p)) for p in percentiles if p > 0]
+        if 0.5 not in percentiles:
+            percentiles.append(0.5)
+
+        percentiles = sorted(percentiles)
+
+        if type_.lower() not in ["continuous", "discrete"]:
+            raise ValueError("The 'type_' parameter must be 'continuous' or 'discrete'")
+
+        suffix = "cont" if type_.lower() == "continuous" else "desc"
+
+        query = _describe_template.render(table=self, columns=columns,
+                                          percentiles=percentiles, suffix=suffix)
+
+        if self.debug:
+            _pretty_print(query)
+
+        cur = self.conn.cursor()
+        cur.execute(query)
+
+        result = {}
+
+        index = ["count", "mean", "std_dev", "minimum"] + \
+                    ["{}%".format(int(100*p)) for p in percentiles] + \
+                    ["maximum"]
+
+        for row in cur.fetchall():
+            result[row[0]] = row[1:]
+
+        result = pd.DataFrame(result, columns=columns, index=index)
+
+        return result
+
 
     def _get_column_data(self):
 
@@ -149,27 +209,6 @@ class Table(object):
         )
 
         self.numeric_array_columns = tuple(numeric_array_columns)
-
-    @property
-    def num_rows(self):
-        """
-        Returns the number of rows of the table.
-
-        .. note::
-
-            This is a lazy attribute, only calling the ``count`` method th e first time it is used.
-
-
-        """
-
-        if self._num_rows is None:
-            self._num_rows = self.count()
-
-        return self._num_rows
-
-    @num_rows.setter
-    def num_rows(self, value):
-        self._num_rows = value
 
     @property
     def schema(self):
