@@ -1,0 +1,3 @@
+include LICENSE
+include README.rst
+recursive-include pg_utils *.j2

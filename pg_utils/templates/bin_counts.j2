@@ -1,0 +1,14 @@
+select
+bucket,
+({{ minimum }} + (bucket - 1) * {{ bin_width }})::double precision as left_endpoint,
+({{ minimum }} + bucket * {{ bin_width }})::double precision as right_endpoint,
+count(1) as num_points
+from(
+    select width_bucket({{ column }}::numeric,
+            {{ minimum }}, {{ maximum }}, {{ bins }})
+            as bucket
+        from {{ table_name }}
+        where {{ column }} is not null
+)hist
+group by 1,2,3
+order by 1;

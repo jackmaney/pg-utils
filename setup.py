@@ -22,5 +22,6 @@ setuptools.setup(
     packages=setuptools.find_packages(),
     url="https://github.com/jackmaney/pg-utils",
     license="MIT",
-    description="Utility libraries for working with PostgreSQL"
+    description="Utility libraries for working with PostgreSQL",
+    include_package_data=True
 )

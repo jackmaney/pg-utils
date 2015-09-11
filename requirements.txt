@@ -2,4 +2,5 @@ jinja2
 lazy_property
 pandas
 psycopg2
+seaborn
 six

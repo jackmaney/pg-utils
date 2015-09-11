@@ -1,12 +1,49 @@
 from .. import template_dir
 from jinja2 import Environment, FileSystemLoader
 from ..exception import TableDoesNotExistError
+import math
 import pandas as pd
 import re
 import six
 from lazy_property import LazyProperty
 
+import seaborn as sns
+
 __all__ = ["Table"]
+
+# TODO: Make this cleaner...
+_desc = None # Holds a description of the column under consideration for binning. Used for DRY.
+
+def _freedman_diaconis_num_bins(column):
+    """
+    https://en.wikipedia.org/wiki/Freedman%E2%80%93Diaconis_rule
+
+    http://stats.stackexchange.com/questions/798/calculating-optimal-number-of-bins-in-a-histogram-for-n-where-n-ranges-from-30
+
+    https://github.com/mwaskom/seaborn/blob/73f2fea2ecbaeb9b9254a3ae02523c0e564c82b6/seaborn/distributions.py#L23
+
+    NOTE: This function assumes that the global variable ``_desc`` has been set to a Pandas Series
+    containing the description information of ``column``.
+
+    :param str column: A column name for which bin counts will be computed.
+    :return: The number of bins to use.
+    :rtype: int
+    """
+
+
+    if _desc["count"] == 0:
+        raise ValueError("Cannot compute Freedman-Diaconis bin count for a count of 0")
+
+    h = 2 * (_desc["75%"] - _desc["25%"]) / (_desc["count"] ** (1.0/3.0))
+
+    if h == 0:
+        return math.ceil(math.sqrt(_desc["count"]))
+    else:
+        return math.ceil((_desc["maximum"] - _desc["minimum"]) / h)
+
+
+
+
 
 def _pretty_print(query):
     print("\n".join([line for line in re.split("\r?\n", query) if not re.match("^\s*$", line)]))
@@ -26,6 +63,7 @@ _numeric_datatypes = [
 
 _env = Environment(loader=FileSystemLoader(template_dir))
 _describe_template = _env.get_template("describe.j2")
+_bin_counts_template = _env.get_template("bin_counts.j2")
 
 class Table(object):
     """
@@ -47,15 +85,16 @@ class Table(object):
         self._schema = schema
         self._table_name = table_name
 
-        if not Table.exists(conn, schema, table_name):
-            raise TableDoesNotExistError("Table {}.{} does not exist".format(
-                schema, table_name
-            ))
-
-        self._num_rows = None
         self.debug = debug
 
+        self._validate()
+
         self._get_column_data()
+
+    def _validate(self):
+
+        if not Table.exists(self.conn, self.schema, self.table_name):
+            raise TableDoesNotExistError("Table {} does not exist".format(self))
 
     @classmethod
     def create(cls, conn, schema,
@@ -139,8 +178,6 @@ class Table(object):
                     percentiles))
 
         percentiles = [float("{0:.2f}".format(p)) for p in percentiles if p > 0]
-        if 0.5 not in percentiles:
-            percentiles.append(0.5)
 
         percentiles = sorted(percentiles)
 
@@ -239,6 +276,49 @@ class Table(object):
 
         return bool(cur.fetchone()[0])
 
+    def distplot(self, column, **kwargs):
+
+        bc = self._bin_counts(column, bins=kwargs.get("bins"))
+
+        data = []
+
+        # For each point in a bin, we'll count it at the midpoint of the bin.
+        for entry in bc:
+            for i in range(entry[2]):
+                data.append((entry[0] + entry[1]) / 2.0)
+
+        sns.distplot(data, **kwargs)
+
+    def _bin_counts(self, column, bins=None):
+
+        if bins is not None and (not isinstance(bins, six.integer_types) or bins <= 0):
+            raise ValueError("'bins' must be a positive integer or None!")
+
+        if column not in self.numeric_columns:
+            raise ValueError("The column {} is not a numeric column of {}".format(column, t))
+
+        global _desc
+        _desc = self.describe(columns=[column], percentiles=[0.25, 0.75])[column]
+
+        if bins is None:
+
+            bins = min(_freedman_diaconis_num_bins(column), 50)
+
+        cur = self.conn.cursor()
+
+        sql = _bin_counts_template.render(
+            bin_width=(_desc["maximum"] - _desc["minimum"]) / bins,
+            bins=bins,
+            table_name=self.name,
+            column=column,
+            minimum=_desc["minimum"],
+            maximum=_desc["maximum"]
+        )
+
+        cur.execute(sql)
+
+        return [row[1:] for row in cur.fetchall()]
+
     def __str__(self):
         """
         The string representation of a ``Table`` object is the
@@ -249,3 +329,37 @@ class Table(object):
 
     def __repr__(self):
         return "<Table '{}'>".format(self.name)
+
+class SubTable(Table):
+
+    def __init__(self, from_table, columns):
+        """
+
+        :param Table from_table: The table from which this subtable is built.
+        :param list[str]|tuple[str] columns: An iterable of columns to which this subtable is restricted.
+        """
+
+        for attr in ["conn", "schema", "table_name", "debug", "_schema", "_table_name"]:
+
+            setattr(self, attr, getattr(from_table, attr))
+
+        self.columns = columns
+        self.column_data_types = {
+            col: data_type for col, data_type
+                in from_table.column_data_types
+                if col in columns
+            }
+        self.numeric_array_columns = tuple(col for col in from_table.numeric_array_columns if col in columns)
+
+    def _validate(self):
+        pass
+
+    def _get_column_data(self):
+        pass
+
+    def __str__(self):
+        return "{}[{}]".format(super(SubTable, self).__str__(), ",".join(self.columns))
+
+    def __repr__(self):
+        return "<SubTable '{}'[{}]>".format(self.name, ",".join(self.columns))
+
