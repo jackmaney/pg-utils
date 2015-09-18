@@ -127,6 +127,11 @@ class Table(object):
 
         return cls(conn, schema, table_name, *args, **kwargs)
 
+    def select_all_query(self):
+
+        return "select * from {}".format(self)
+
+
     def head(self, num_rows=10, **kwargs):
         """
         Returns some of the rows, returning a corresponding Pandas DataFrame.
@@ -145,7 +150,7 @@ class Table(object):
             raise ValueError(
                 "'num_rows': Expected a positive integer or 'all'")
 
-        query = "select * from {}".format(self)
+        query = self.select_all_query()
 
         if num_rows != "all":
             query += " limit {}".format(num_rows)
@@ -239,13 +244,15 @@ class Table(object):
         self.column_data_types = column_data_types
         self.columns = tuple(columns)
 
-        self.numeric_columns = tuple(
+        self.numeric_array_columns = tuple(numeric_array_columns)
+
+    @LazyProperty
+    def numeric_columns(self):
+        return tuple(
             x for x in self.columns
             if self.column_data_types[x]
             in _numeric_datatypes
         )
-
-        self.numeric_array_columns = tuple(numeric_array_columns)
 
     @property
     def schema(self):
@@ -276,6 +283,10 @@ class Table(object):
 
         return bool(cur.fetchone()[0])
 
+    def __getitem__(self, column_list):
+
+        return IndexedTable.from_table(self, column_list)
+
     def distplot(self, column, **kwargs):
 
         bc = self._bin_counts(column, bins=kwargs.get("bins"))
@@ -295,7 +306,7 @@ class Table(object):
             raise ValueError("'bins' must be a positive integer or None!")
 
         if column not in self.numeric_columns:
-            raise ValueError("The column {} is not a numeric column of {}".format(column, t))
+            raise ValueError("The column {} is not a numeric column of {}".format(column, self))
 
         global _desc
         _desc = self.describe(columns=[column], percentiles=[0.25, 0.75])[column]
@@ -330,26 +341,39 @@ class Table(object):
     def __repr__(self):
         return "<Table '{}'>".format(self.name)
 
-class SubTable(Table):
+class IndexedTable(Table):
 
-    def __init__(self, from_table, columns):
+    def __init__(self, columns, conn, schema, table_name, debug=False):
+
+        super().__init__(conn, schema, table_name, debug=debug)
+        self.columns=columns
+
+    @classmethod
+    def from_table(cls, parent_table, columns):
         """
 
-        :param Table from_table: The table from which this subtable is built.
+        :param Table parent_table: The table from which this subtable is built.
         :param list[str]|tuple[str] columns: An iterable of columns to which this subtable is restricted.
         """
 
-        for attr in ["conn", "schema", "table_name", "debug", "_schema", "_table_name"]:
+        kwargs = {
+                    attr: getattr(parent_table, attr)
+                    for attr in ["conn", "schema", "table_name", "debug"]
+                }
 
-            setattr(self, attr, getattr(from_table, attr))
+        kwargs["columns"] = columns
 
-        self.columns = columns
-        self.column_data_types = {
+        result = cls(**kwargs)
+        result.column_data_types = {
             col: data_type for col, data_type
-                in from_table.column_data_types
+                in parent_table.column_data_types.items()
                 if col in columns
             }
-        self.numeric_array_columns = tuple(col for col in from_table.numeric_array_columns if col in columns)
+        result.numeric_array_columns = tuple(
+            col for col in parent_table.numeric_array_columns
+            if col in columns)
+
+        return result
 
     def _validate(self):
         pass
@@ -357,9 +381,14 @@ class SubTable(Table):
     def _get_column_data(self):
         pass
 
+    def select_all_query(self):
+
+        return "select {} from {}".format(
+            ", ".join(self.columns), self.name)
+
     def __str__(self):
-        return "{}[{}]".format(super(SubTable, self).__str__(), ",".join(self.columns))
+        return "{}[{}]".format(super(IndexedTable, self).__str__(), ",".join(self.columns))
 
     def __repr__(self):
-        return "<SubTable '{}'[{}]>".format(self.name, ",".join(self.columns))
+        return "<IndexedTable '{}'[{}]>".format(self.name, ",".join(self.columns))
 
