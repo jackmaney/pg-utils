@@ -79,11 +79,12 @@ class Table(object):
     as found in the ``columns`` attribute above).
     """
 
-    def __init__(self, conn, schema, table_name, debug=False):
+    def __init__(self, conn, schema, table_name, columns=None, debug=False):
 
         self.conn = conn
         self._schema = schema
         self._table_name = table_name
+        self.columns = columns
 
         self.debug = debug
 
@@ -129,7 +130,7 @@ class Table(object):
 
     def select_all_query(self):
 
-        return "select * from {}".format(self)
+        return "select {} from {}".format(",".join(self.columns), self)
 
 
     def head(self, num_rows=10, **kwargs):
@@ -226,25 +227,34 @@ class Table(object):
             order by ordinal_position
         """.format(self.schema, self.table_name))
 
+        all_columns = []
         columns = []
         column_data_types = {}
         numeric_array_columns = []
 
         for row in cur.fetchall():
-            columns.append(row[0])
-            if row[1].lower() == "array":
-                data_type = "{}[]".format(row[2])
-                if row[2].lower() in _numeric_datatypes:
-                    numeric_array_columns.append(row[0])
-            else:
-                data_type = row[1]
+            all_columns.append(row[0])
 
-            column_data_types[row[0]] = data_type
+            if self.columns is None:
+                columns.append(row[0])
+
+            if self.columns is None or row[0] in self.columns:
+                if row[1].lower() == "array":
+                    data_type = "{}[]".format(row[2])
+                    if row[2].lower() in _numeric_datatypes:
+                        numeric_array_columns.append(row[0])
+                else:
+                    data_type = row[1]
+
+                column_data_types[row[0]] = data_type
 
         self.column_data_types = column_data_types
-        self.columns = tuple(columns)
+
+        if self.columns is None:
+            self.columns = tuple(columns)
 
         self.numeric_array_columns = tuple(numeric_array_columns)
+        self.all_columns = all_columns
 
     @LazyProperty
     def numeric_columns(self):
@@ -269,6 +279,15 @@ class Table(object):
         """
         return ".".join([self.schema, self.table_name])
 
+    def drop(self):
+        """
+        Drops the table and deletes this object (by calling ``del`` on it).
+        """
+        cur = self.conn.cursor()
+        cur.execute("drop table {} cascade".format(self))
+        del self
+
+
     @staticmethod
     def exists(conn, schema, table_name):
         """
@@ -285,7 +304,13 @@ class Table(object):
 
     def __getitem__(self, column_list):
 
-        return IndexedTable.from_table(self, column_list)
+        if isinstance(column_list, six.string_types):
+            column_list = [column_list]
+
+        result = Table(self.conn, self.schema, self.table_name,
+                       columns=column_list, debug=self.debug)
+
+        return result
 
     def distplot(self, column, **kwargs):
 
@@ -341,54 +366,4 @@ class Table(object):
     def __repr__(self):
         return "<Table '{}'>".format(self.name)
 
-class IndexedTable(Table):
-
-    def __init__(self, columns, conn, schema, table_name, debug=False):
-
-        super().__init__(conn, schema, table_name, debug=debug)
-        self.columns=columns
-
-    @classmethod
-    def from_table(cls, parent_table, columns):
-        """
-
-        :param Table parent_table: The table from which this subtable is built.
-        :param list[str]|tuple[str] columns: An iterable of columns to which this subtable is restricted.
-        """
-
-        kwargs = {
-                    attr: getattr(parent_table, attr)
-                    for attr in ["conn", "schema", "table_name", "debug"]
-                }
-
-        kwargs["columns"] = columns
-
-        result = cls(**kwargs)
-        result.column_data_types = {
-            col: data_type for col, data_type
-                in parent_table.column_data_types.items()
-                if col in columns
-            }
-        result.numeric_array_columns = tuple(
-            col for col in parent_table.numeric_array_columns
-            if col in columns)
-
-        return result
-
-    def _validate(self):
-        pass
-
-    def _get_column_data(self):
-        pass
-
-    def select_all_query(self):
-
-        return "select {} from {}".format(
-            ", ".join(self.columns), self.name)
-
-    def __str__(self):
-        return "{}[{}]".format(super(IndexedTable, self).__str__(), ",".join(self.columns))
-
-    def __repr__(self):
-        return "<IndexedTable '{}'[{}]>".format(self.name, ",".join(self.columns))
 
