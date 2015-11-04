@@ -31,6 +31,8 @@ class TestTableColumnSelect(unittest.TestCase):
           distributed by (x,y);""".format(user_schema, table_name))
 
         self.assertEqual(table.count, 100)
+        self.assertEqual(table.shape, (100, 2))
+
         self.assertEqual(set(table.columns), {"x", "y"})
         self.assertEqual(set(table.columns), set(table.all_columns))
 

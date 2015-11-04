@@ -167,6 +167,14 @@ class Table(object):
 
         return cur.fetchone()[0]
 
+    @LazyProperty
+    def shape(self):
+        """
+        As in the property of Pandas DataFrames by the same name, this gives a tuple showing the dimensions of the table: ``(number of rows, number of columns)``
+        """
+
+        return self.count, len(self.columns)
+
     def describe(self, columns=None, percentiles=None, type_="continuous"):
 
         if columns is None:

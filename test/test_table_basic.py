@@ -32,6 +32,7 @@ class TestTableBasic(unittest.TestCase):
         self.assertTrue(pg_utils.table.Table.exists(conn, user_schema, table_name))
 
         self.assertEqual(table.count, 10)
+        self.assertEqual(table.shape, (10, 1))
 
         table.drop()
 
