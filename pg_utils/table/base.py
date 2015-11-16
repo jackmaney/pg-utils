@@ -74,7 +74,7 @@ class Table(object):
 
         self._validate()
 
-        self._get_column_data()
+        self._process_columns()
 
     def _validate(self):
 
@@ -114,6 +114,11 @@ class Table(object):
             kwargs["check_existence"] = False
 
         return cls(conn, schema, table_name, *args, **kwargs)
+
+    @classmethod
+    def from_table(cls, table, *args, **kwargs):
+        return cls(table.conn, table.schema, table.table_name, *args, **kwargs)
+
 
     def select_all_query(self):
 
@@ -228,7 +233,7 @@ class Table(object):
         )a
         order by ordinal_position;""".format(self.schema, self.table_name), self.conn)
 
-    def _get_column_data(self):
+    def _process_columns(self):
 
         self.all_columns = self.all_columns or [x for x in self._all_column_metadata.column_name]
         self.all_column_data_types = self.all_column_data_types or {
@@ -243,6 +248,12 @@ class Table(object):
 
         if [x for x in self.columns if x not in self.all_columns]:
             raise NoSuchColumnError(str([x for x in self.columns if x not in self.all_columns]))
+
+    def __getattr__(self, item):
+        if self.columns is not None and item in self.columns:
+            return Table.from_table(self, columns=[item], check_existence=False)
+        else:
+            raise AttributeError
 
     @LazyProperty
     def all_numeric_columns(self):

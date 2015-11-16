@@ -8,6 +8,7 @@ import os
 
 # Override to create the test table in a schema other than your own.
 user_schema = os.getenv("pg_username")
+table_name = "pg_utils_test_basic"
 
 conn = None
 
@@ -25,7 +26,6 @@ def tearDownModule():
 
 class TestTableBasic(unittest.TestCase):
     def test_created_basic(self):
-        table_name = "pg_utils_test"
         table = pg_utils.table.Table.create(conn, user_schema, table_name,
                                             """create table {}.{} as
           select generate_series(1,10) as x
@@ -46,7 +46,6 @@ class TestTableBasic(unittest.TestCase):
 
 class TestTableColumnSelect(unittest.TestCase):
     def test_column_select(self):
-        table_name = "pg_utils_test"
         table = pg_utils.table.Table.create(conn, user_schema, table_name,
                                             """create table {}.{} as
           select random() as x, random() as y
