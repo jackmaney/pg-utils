@@ -147,7 +147,13 @@ class Table(object):
         if num_rows != "all":
             query += " limit {}".format(num_rows)
 
-        return pd.read_sql(query, self.conn, **kwargs)
+        result = pd.read_sql(query, self.conn, **kwargs)
+
+        if len(self.columns) == 1:
+            result = result[self.columns[0]]
+
+        return result
+
 
     @LazyProperty
     def count(self):

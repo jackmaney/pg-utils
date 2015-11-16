@@ -37,7 +37,7 @@ class TestTableBasic(unittest.TestCase):
         self.assertEqual(table.count, 10)
         self.assertEqual(table.shape, (10, 1))
 
-        self.assertEqual({n for n in table.head("all").x}, set(range(1,11)))
+        self.assertEqual({n for n in table.head("all")}, set(range(1,11)))
 
         table.drop()
 

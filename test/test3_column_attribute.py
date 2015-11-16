@@ -5,6 +5,7 @@ sys.path = ['..'] + sys.path
 import unittest
 import pg_utils
 import os
+import pandas as pd
 
 # Override to create the test table in a schema other than your own.
 user_schema = os.getenv("pg_username")
@@ -33,7 +34,10 @@ class TestColumnAttribute(unittest.TestCase):
 
         self.assertTrue(table_y)
         self.assertEqual(table_y.columns, ["y"])
-        y_values = [x for x in table_y.head("all")["y"]]
+        y_col = self.table.y.head("all")
+        self.assertTrue(isinstance(y_col, pd.Series))
+
+        y_values = [x for x in y_col]
         self.assertEqual(len(y_values), 100)
         self.assertTrue(all([0<= x <=1 for x in y_values]))
 
