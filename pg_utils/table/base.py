@@ -6,6 +6,10 @@ import pandas as pd
 import re
 import six
 from lazy_property import LazyProperty
+import warnings
+
+warnings.filterwarnings("ignore", message="axes.color_cycle is deprecated")
+
 import seaborn as sns
 
 __all__ = ["Table"]
