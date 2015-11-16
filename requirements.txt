@@ -1,5 +1,5 @@
 jinja2
-lazy_property
+lazy-property
 pandas
 psycopg2
 seaborn

@@ -1,52 +1,19 @@
 from .. import template_dir
 from jinja2 import Environment, FileSystemLoader
-from ..exception import TableDoesNotExistError
-import math
+from ..exception import *
+from .. import bin_counts
 import pandas as pd
 import re
 import six
 from lazy_property import LazyProperty
-
 import seaborn as sns
 
 __all__ = ["Table"]
 
-# TODO: Make this cleaner...
-_desc = None # Holds a description of the column under consideration for binning. Used for DRY.
-
-def _freedman_diaconis_num_bins(column):
-    """
-    https://en.wikipedia.org/wiki/Freedman%E2%80%93Diaconis_rule
-
-    http://stats.stackexchange.com/questions/798/calculating-optimal-number-of-bins-in-a-histogram-for-n-where-n-ranges-from-30
-
-    https://github.com/mwaskom/seaborn/blob/73f2fea2ecbaeb9b9254a3ae02523c0e564c82b6/seaborn/distributions.py#L23
-
-    NOTE: This function assumes that the global variable ``_desc`` has been set to a Pandas Series
-    containing the description information of ``column``.
-
-    :param str column: A column name for which bin counts will be computed.
-    :return: The number of bins to use.
-    :rtype: int
-    """
-
-
-    if _desc["count"] == 0:
-        raise ValueError("Cannot compute Freedman-Diaconis bin count for a count of 0")
-
-    h = 2 * (_desc["75%"] - _desc["25%"]) / (_desc["count"] ** (1.0/3.0))
-
-    if h == 0:
-        return math.ceil(math.sqrt(_desc["count"]))
-    else:
-        return math.ceil((_desc["maximum"] - _desc["minimum"]) / h)
-
-
-
-
 
 def _pretty_print(query):
     print("\n".join([line for line in re.split("\r?\n", query) if not re.match("^\s*$", line)]))
+
 
 _numeric_datatypes = [
     "smallint",
@@ -65,6 +32,7 @@ _env = Environment(loader=FileSystemLoader(template_dir))
 _describe_template = _env.get_template("describe.j2")
 _bin_counts_template = _env.get_template("bin_counts.j2")
 
+
 class Table(object):
     """
     This class is used for representing table metadata.
@@ -79,13 +47,29 @@ class Table(object):
     as found in the ``columns`` attribute above).
     """
 
-    def __init__(self, conn, schema, table_name, columns=None, debug=False):
+    def __init__(self, conn, schema, table_name,
+                 columns=None, all_columns=None, all_column_data_types=None,
+                 check_existence=True, debug=False):
+        """
+
+        :param pg_utils.connection.Connection conn:
+        :param str schema: The name of the schema in which this table lies.
+        :param str table_name: The name of the given table within the above schema.
+        :param str|list[str]|tuple[str] columns: An iterable
+        :param all_columns:
+        :param all_column_data_types:
+        :param check_existence:
+        :param debug:
+        :return:
+        """
 
         self.conn = conn
         self._schema = schema
         self._table_name = table_name
         self.columns = columns
-
+        self.all_columns = all_columns
+        self.all_column_data_types = all_column_data_types
+        self.check_existence = check_existence
         self.debug = debug
 
         self._validate()
@@ -94,7 +78,7 @@ class Table(object):
 
     def _validate(self):
 
-        if not Table.exists(self.conn, self.schema, self.table_name):
+        if self.check_existence and not Table.exists(self.conn, self.schema, self.table_name):
             raise TableDoesNotExistError("Table {} does not exist".format(self))
 
     @classmethod
@@ -119,19 +103,21 @@ class Table(object):
         :param kwargs: Other keyword arguments to pass to the initializer.
         :return: The corresponding ``Table`` object *after* the ``create_stmt`` is executed.
         """
+
         cur = conn.cursor()
-        drop_stmt = "drop table if exists {}.{} cascade;".format(schema, table_name)
-        cur.execute(drop_stmt)
+        cur.execute("drop table if exists {}.{} cascade;".format(schema, table_name))
         conn.commit()
         cur.execute(create_stmt)
         conn.commit()
+
+        if not kwargs.get("check_existence"):
+            kwargs["check_existence"] = False
 
         return cls(conn, schema, table_name, *args, **kwargs)
 
     def select_all_query(self):
 
         return "select {} from {}".format(",".join(self.columns), self)
-
 
     def head(self, num_rows=10, **kwargs):
         """
@@ -212,8 +198,8 @@ class Table(object):
         result = {}
 
         index = ["count", "mean", "std_dev", "minimum"] + \
-                    ["{}%".format(int(100*p)) for p in percentiles] + \
-                    ["maximum"]
+                ["{}%".format(int(100 * p)) for p in percentiles] + \
+                ["maximum"]
 
         for row in cur.fetchall():
             result[row[0]] = row[1:]
@@ -222,55 +208,72 @@ class Table(object):
 
         return result
 
+    @LazyProperty
+    def _all_column_metadata(self):
+        return pd.read_sql("""
+        select column_name,
+            case
+                when lower(data_type) = 'array' then column_alias||'[]'
+                else data_type
+            end as data_type
+        from(
+            select
+            column_name,
+            data_type,
+            translate(udt_name, '0123456789_', '') as column_alias,
+            ordinal_position
+            from information_schema.columns
+            where table_schema = '{}'
+            and table_name = '{}'
+        )a
+        order by ordinal_position;""".format(self.schema, self.table_name), self.conn)
 
     def _get_column_data(self):
 
-        cur = self.conn.cursor()
-
-        cur.execute("""
-            select column_name, data_type,
-            translate(udt_name, '0123456789_', '') as column_alias
-            from information_schema.columns
-            where table_schema='{}' and table_name='{}'
-            order by ordinal_position
-        """.format(self.schema, self.table_name))
-
-        all_columns = []
-        columns = []
-        column_data_types = {}
-        numeric_array_columns = []
-
-        for row in cur.fetchall():
-            all_columns.append(row[0])
-
-            if self.columns is None:
-                columns.append(row[0])
-
-            if self.columns is None or row[0] in self.columns:
-                if row[1].lower() == "array":
-                    data_type = "{}[]".format(row[2])
-                    if row[2].lower() in _numeric_datatypes:
-                        numeric_array_columns.append(row[0])
-                else:
-                    data_type = row[1]
-
-                column_data_types[row[0]] = data_type
-
-        self.column_data_types = column_data_types
+        self.all_columns = self.all_columns or [x for x in self._all_column_metadata.column_name]
+        self.all_column_data_types = self.all_column_data_types or {
+            row["column_name"]: row["data_type"]
+            for i, row in self._all_column_metadata.iterrows()
+            }
 
         if self.columns is None:
-            self.columns = tuple(columns)
+            self.columns = tuple(x for x in self.all_columns)
+        elif isinstance(self.columns, six.string_types):
+            self.columns = (self.columns,)
 
-        self.numeric_array_columns = tuple(numeric_array_columns)
-        self.all_columns = all_columns
+        if [x for x in self.columns if x not in self.all_columns]:
+            raise NoSuchColumnError(str([x for x in self.columns if x not in self.all_columns]))
+
+    @LazyProperty
+    def all_numeric_columns(self):
+        return [x for x in self.all_columns
+                if self.all_column_data_types[x] in _numeric_datatypes]
 
     @LazyProperty
     def numeric_columns(self):
         return tuple(
-            x for x in self.columns
-            if self.column_data_types[x]
-            in _numeric_datatypes
+            col for col in self.columns
+            if self.column_data_types[col] in _numeric_datatypes
         )
+
+    @LazyProperty
+    def all_numeric_array_columns(self):
+        return [col for col in self.all_columns
+                if self.all_column_data_types[col][-2:] == "[]"
+                and col[:-2] in _numeric_datatypes]
+
+    @LazyProperty
+    def numeric_array_columns(self):
+        return tuple(
+            col for col in self.all_numeric_array_columns if col in self.columns
+        )
+
+    @LazyProperty
+    def column_data_types(self):
+        return {
+            col: data_type for col, data_type in self.all_column_data_types.items()
+            if col in self.columns
+            }
 
     @property
     def schema(self):
@@ -295,11 +298,16 @@ class Table(object):
         cur.execute("drop table {} cascade".format(self))
         del self
 
-
     @staticmethod
     def exists(conn, schema, table_name):
         """
         A static method that returns whether or not the given table exists.
+
+        :param pg_utils.connection.Connection conn: A connection to the database.
+        :param str schema: The name of the schema.
+        :param str table_name: The name of the table.
+        :return: Whether or not the table exists.
+        :rtype: bool
         """
         cur = conn.cursor()
         cur.execute("""
@@ -320,48 +328,26 @@ class Table(object):
 
         return result
 
-    def distplot(self, column, **kwargs):
+    def distplot(self, column, bins=None, **kwargs):
+        """
+        Produces a ``distplot``. See `the seaborn docs <http://stanford.edu/~mwaskom/software/seaborn/generated/seaborn.distplot.html>`_ on ``distplot`` for more information.
 
-        bc = self._bin_counts(column, bins=kwargs.get("bins"))
+        :param str column:
+        :param int|None bins: Either a positive integer number of bin_counts to use.
+        :param dict kwargs: A dictionary of options to pass on to `seaborn.distplot <http://stanford.edu/~mwaskom/software/seaborn/generated/seaborn.distplot.html>`_.
+        """
+
+        bc = bin_counts.counts(self, column, bins=bins)
 
         data = []
 
-        # For each point in a bin, we'll count it at the midpoint of the bin.
+        # For each point in a bin_counts, we'll count it at the midpoint of the bin_counts.
         for entry in bc:
             for i in range(entry[2]):
                 data.append((entry[0] + entry[1]) / 2.0)
 
         sns.distplot(data, **kwargs)
 
-    def _bin_counts(self, column, bins=None):
-
-        if bins is not None and (not isinstance(bins, six.integer_types) or bins <= 0):
-            raise ValueError("'bins' must be a positive integer or None!")
-
-        if column not in self.numeric_columns:
-            raise ValueError("The column {} is not a numeric column of {}".format(column, self))
-
-        global _desc
-        _desc = self.describe(columns=[column], percentiles=[0.25, 0.75])[column]
-
-        if bins is None:
-
-            bins = min(_freedman_diaconis_num_bins(column), 50)
-
-        cur = self.conn.cursor()
-
-        sql = _bin_counts_template.render(
-            bin_width=(_desc["maximum"] - _desc["minimum"]) / bins,
-            bins=bins,
-            table_name=self.name,
-            column=column,
-            minimum=_desc["minimum"],
-            maximum=_desc["maximum"]
-        )
-
-        cur.execute(sql)
-
-        return [row[1:] for row in cur.fetchall()]
 
     def __str__(self):
         """
@@ -373,5 +359,3 @@ class Table(object):
 
     def __repr__(self):
         return "<Table '{}'>".format(self.name)
-
-
