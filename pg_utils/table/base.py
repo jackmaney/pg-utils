@@ -6,6 +6,7 @@ import pandas as pd
 import re
 import six
 from lazy_property import LazyProperty
+from collections import defaultdict
 import warnings
 
 warnings.filterwarnings("ignore", message="axes.color_cycle is deprecated")
@@ -175,6 +176,28 @@ class Table(object):
         """
 
         return self.count, len(self.columns)
+
+    @LazyProperty
+    def dtypes(self):
+
+        return pd.Series(self.column_data_types, index=self.columns)
+
+    def get_dtype_counts(self):
+
+        counts = defaultdict(int)
+
+        dtypes = self.dtypes
+
+        for dt in dtypes:
+            counts[dt] += 1
+
+        return pd.Series(
+            [counts[dt] for dt in sorted(list(counts.keys()))],
+            index = sorted(list(counts.keys()))
+        )
+
+
+
 
     def describe(self, columns=None, percentiles=None, type_="continuous"):
 

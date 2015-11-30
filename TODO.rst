@@ -5,9 +5,9 @@ TODO
 
     * ``as_matrix`` (taking number of rows and returning the corresponding NumPy array representation.
 
-    * ``dtypes`` (giving the PostgreSQL data types of each column)
+    * ``dtypes`` (giving the PostgreSQL data types of each column) **Done**, although there is no actual ``dtype`` object; types are represented as strings.
 
-    * ``get_dtype_counts`` (ie number of ``text`` columns, number of ``int`` columns, etc).
+    * ``get_dtype_counts`` (ie number of ``text`` columns, number of ``int`` columns, etc). **Done** with the same caveat as above for ``dtypes``.
 
     * ``select_dtypes``
 
