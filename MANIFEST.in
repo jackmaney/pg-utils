@@ -1,4 +1,5 @@
 include LICENSE
 include README.rst
+include requirements.txt
 recursive-include pg_utils *.j2
 recursive-exclude test *.py
