@@ -1,5 +1,7 @@
 import sys
 
+import pg_utils.table.table
+
 sys.path = ['..'] + sys.path
 
 import unittest
@@ -16,7 +18,7 @@ class TestDtypes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.conn = pg_utils.connection.Connection()
-        cls.table = pg_utils.table.Table.create(cls.conn, user_schema, table_name,
+        cls.table = pg_utils.table.table.Table.create(cls.conn, user_schema, table_name,
                                             """create table {}.{} as
           select x::int as x, random() as y, random() as z, 'abc'::text as w
           from generate_series(1,100) x

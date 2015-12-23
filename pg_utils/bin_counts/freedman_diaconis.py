@@ -2,7 +2,7 @@ import math
 
 __all__ = ["num_bins"]
 
-def num_bins(table, column, desc=None):
+def num_bins(column, desc=None):
     """
     https://en.wikipedia.org/wiki/Freedman%E2%80%93Diaconis_rule
 
@@ -13,14 +13,13 @@ def num_bins(table, column, desc=None):
     NOTE: This function assumes that the global variable ``desc`` has been set to a Pandas Series
     containing the description information of ``column``.
 
-    :param pg_utils.table.Table table: The table containing the column which is to be binned.
-    :param str column: A column name for which bin_counts counts will be computed.
+    :param pg_utils.column.Column column: A column object for which bin_counts counts will be computed.
     :param pd.Series desc: An optional series produced by the ``describe`` method of ``table`` containing the 25th and 75th percentiles (so that pre-computed values can be optionally passed in). If not specified, then ``table.describe`` will be called.
     :return: The number of bin_counts to use.
     :rtype: int
     """
 
-    desc = desc if desc is not None else table.describe(columns=[column], percentiles=[0.25, 0.75])[column]
+    desc = desc if desc is not None else column.describe(percentiles=[0.25, 0.75])
 
     if desc["count"] == 0:
         raise ValueError("Cannot compute Freedman-Diaconis bin_counts count for a count of 0")

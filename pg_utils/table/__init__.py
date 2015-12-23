@@ -1,1 +1,1 @@
-from .base import Table
+from pg_utils.table.table import Table

@@ -1,0 +1,12 @@
+select '{{ column }}' as column_name,
+count({{ column }}) as count,
+avg({{ column }}) as mean,
+stddev_samp({{ column }}) as std_dev,
+min({{ column }}) as minimum,
+{% for pct in percentiles %}
+percentile_{{ suffix }}({{ pct }})
+    within group (order by {{ column }})
+    as pct_{{ pct | string() | replace('0.', '') }},
+{% endfor %}
+max({{ column }}) as maximum
+from {{ table }}
