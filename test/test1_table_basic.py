@@ -1,27 +1,25 @@
 import sys
 
-import pg_utils.table.table
-
 sys.path = ['..'] + sys.path
 
 import unittest
-import pg_utils
+from pg_utils import connection, table, column
 import os
 
 # Override to create the test table in a schema other than your own.
 user_schema = os.getenv("pg_username")
 table_name = "pg_utils_test_basic"
 
-conn = pg_utils.connection.Connection()
+conn = connection.Connection()
 
 
 
-t1 = pg_utils.table.table.Table.create(conn, user_schema, "{}_1".format(table_name),
+t1 = table.Table.create(conn, user_schema, "{}_1".format(table_name),
                                             """create table {}.{} as
           select generate_series(1,10) as x
           distributed by (x);""".format(user_schema, "{}_1".format(table_name)))
 
-t2 = pg_utils.table.table.Table.create(conn, user_schema, "{}_2".format(table_name),
+t2 = table.Table.create(conn, user_schema, "{}_2".format(table_name),
                                             """create table {}.{} as
           select random() as x, random() as y, random() as z
           from generate_series(1,100)
@@ -39,7 +37,7 @@ class TestTableBasic(unittest.TestCase):
     def test_created_basic(self):
 
         self.assertTrue(t1)
-        self.assertTrue(pg_utils.table.table.Table.exists(conn, t1.schema, t1.table_name))
+        self.assertTrue(table.Table.exists(conn, t1.schema, t1.table_name))
 
         self.assertEqual(t1.count, 10)
         self.assertEqual(t1.shape, (10, 1))
@@ -75,7 +73,7 @@ class TestTableSingleColumnSelect(unittest.TestCase):
 
         col = t2.x
 
-        self.assertTrue(isinstance(col, pg_utils.column.Column))
+        self.assertTrue(isinstance(col, column.Column))
 
         self.assertEqual(col.size, 100)
 

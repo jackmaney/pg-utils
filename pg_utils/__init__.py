@@ -24,5 +24,3 @@ numeric_datatypes = [
 
 def _pretty_print(query):
     print("\n".join([line for line in re.split("\r?\n", query) if not re.match("^\s*$", line)]))
-
-from . import table, connection, column
