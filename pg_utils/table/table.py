@@ -286,7 +286,7 @@ class Table(object):
     def all_numeric_array_columns(self):
         return [col for col in self._all_column_names
                 if self.all_column_data_types[col][-2:] == "[]"
-                and self.all_column_data_types[col][-2:] in numeric_datatypes]
+                and self.all_column_data_types[col][:-2] in numeric_datatypes]
 
     @LazyProperty
     def numeric_array_columns(self):
