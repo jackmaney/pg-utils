@@ -1,8 +1,5 @@
 jinja2
 lazy-property
 pandas
-scipy
 psycopg2
-matplotlib
-seaborn
 six

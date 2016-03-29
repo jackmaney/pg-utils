@@ -1,12 +1,17 @@
 import sys
 
-import pg_utils.table.table
-
 sys.path = ['..'] + sys.path
 
 import unittest
-from pg_utils import connection, table, column
+from pg_utils import connection, table
 import os
+
+_has_seaborn=True
+
+try:
+    import seaborn
+except ImportError:
+    _has_seaborn = False
 
 # Override to create the test table in a schema other than your own.
 user_schema = os.getenv("pg_username")
@@ -14,6 +19,7 @@ table_name = "pg_utils_test_distplot"
 
 
 # noinspection PyBroadException
+@unittest.skipIf(not _has_seaborn, "seaborn not found, or there was an issue importing it.")
 class TestDistPlot(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -19,6 +19,9 @@ setuptools.setup(
     author_email="jackmaney@gmail.com",
     version=__version__,
     install_requires=requirements,
+    extras_require={
+        "graphics": ["seaborn"]
+    },
     packages=setuptools.find_packages(),
     url="https://github.com/jackmaney/pg-utils",
     license="MIT",

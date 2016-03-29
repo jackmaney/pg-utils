@@ -1,18 +1,14 @@
-import math
-import six
-
-import pg_utils.table.table
-from .. import numeric_datatypes, _pretty_print
-import pandas as pd
 import numpy as np
-import seaborn
+import pandas as pd
 from lazy_property import LazyProperty
 
-from . import _describe_template, _bin_counts_template
+import pg_utils.table.table
+from . import _describe_template
 from .. import bin_counts
+from .. import numeric_datatypes, _pretty_print
+
 
 class Column(object):
-
     def __init__(self, name, parent_table, sort=False):
         """
 
@@ -24,15 +20,14 @@ class Column(object):
 
         if not isinstance(parent_table, pg_utils.table.table.Table):
             raise ValueError(
-                    "The 'parent_table' parameter must be a pg_utils.parent_table.Table, not {}".format(
-                        type(parent_table)
-                    ))
+                "The 'parent_table' parameter must be a pg_utils.parent_table.Table, not {}".format(
+                    type(parent_table)
+                ))
 
         self.parent_table = parent_table
         self.name = name
         self.is_numeric = parent_table.all_column_data_types[name] in numeric_datatypes
         self.sort = sort
-
 
     def select_all_query(self):
 
@@ -68,8 +63,8 @@ class Column(object):
 
         if any([x < 0 or x > 1 for x in percentiles]):
             raise ValueError(
-                    "The `percentiles` attribute must be None or consist of numbers between 0 and 1 (got {})".format(
-                            percentiles))
+                "The `percentiles` attribute must be None or consist of numbers between 0 and 1 (got {})".format(
+                    percentiles))
 
         percentiles = sorted([float("{0:.2f}".format(p)) for p in percentiles if p > 0])
 
@@ -86,7 +81,6 @@ class Column(object):
     def describe(self, percentiles=None, type_="continuous"):
 
         if percentiles is None:
-
             percentiles = [0.25, 0.5, 0.75]
 
         cur = self.parent_table.conn.cursor()
@@ -107,6 +101,13 @@ class Column(object):
         :param dict kwargs: A dictionary of options to pass on to `seaborn.distplot <http://stanford.edu/~mwaskom/software/seaborn/generated/seaborn.distplot.html>`_.
         """
 
+        try:
+            import seaborn
+            import numpy as np
+        except ImportError as e:
+            raise ImportError(
+                "You do not have seaborn installed (or there was an issue importing it). Please install seaborn (or pg-utils[graphics])")
+
         bc = bin_counts.counts(self, bins=bins)
 
         n = sum([entry[2] for entry in bc])
@@ -124,7 +125,7 @@ class Column(object):
         # We'll take our overall data points to be in the midpoint
         # of each binning interval
         # TODO: make this more configurable (left, right, etc)
-        seaborn.distplot((left + right) / 2.0, **kwargs)
+        return seaborn.distplot((left + right) / 2.0, **kwargs)
 
     @LazyProperty
     def values(self):
@@ -159,64 +160,10 @@ class Column(object):
 
         return self._calculate_aggregate("min")
 
-
     @LazyProperty
     def size(self):
 
         return self.parent_table.count
-
-    def bin_counts(self, bins=None):
-
-        """
-        Retrieves the counts of values in a given column for a given number of bins.
-
-        :param int|None bins: The number of bin_counts that you want. If set to ``None``,
-         then the `Freedman-Diaconis rule <https://en.wikipedia.org/wiki/Freedman%E2%80%93Diaconis_rule>`_ will be used.
-        :return: A list of lists. Each sublist represents the count of items in a particular bin_counts and is of the form ``[left_endpoint, right_endpoint, bin_count]``.
-        :rtype: list[list[float]]
-        """
-
-        if not self.is_numeric:
-            return None
-
-        if bins is not None and (not isinstance(bins, six.integer_types) or bins <= 0):
-            raise ValueError("'bin_counts' must be a positive integer or None!")
-
-        if bins is None:
-            desc = self.describe(percentiles=[0.25, 0.75])
-            bins = min(self._freedman_diaconis(desc=desc), 50)
-        else:
-            desc = self.describe(percentiles=[])
-
-        cur = self.parent_table.conn.cursor()
-
-        sql = _bin_counts_template.render(
-            bin_width=(desc["maximum"] - desc["minimum"]) / bins,
-            bins=bins,
-            table_name=self.parent_table.name,
-            column=self,
-            minimum=desc["minimum"],
-            maximum=desc["maximum"]
-        )
-
-        cur.execute(sql)
-
-        return [row[:1] for row in cur.fetchall()]
-
-    def _freedman_diaconis(self, desc=None):
-
-        desc = desc or self.describe(percentiles=[0.25, 0.75])
-
-        if desc["count"] == 0:
-            raise ValueError(
-                    "Cannot compute Freedman-Diaconis bin_counts count for a count of 0")
-
-        h = 2 * (desc["75%"] - desc["25%"]) / (desc["count"] ** (1.0 / 3.0))
-
-        if h == 0:
-            return math.ceil(math.sqrt(desc["count"]))
-        else:
-            return math.ceil((desc["maximum"] - desc["minimum"]) / h)
 
     def __str__(self):
         return self.name
@@ -234,5 +181,3 @@ class Column(object):
     def __ne__(self, other):
 
         return not self.__eq__(other)
-
-
