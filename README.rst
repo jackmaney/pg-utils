@@ -5,8 +5,8 @@ pg-utils: PostgreSQL Utils
     :target: https://badge.fury.io/py/pg-utils
 
 .. image:: https://readthedocs.org/projects/pg-utils/badge/?version=latest
-:target: http://pg-utils.readthedocs.org/en/latest/?badge=latest
-:alt: Documentation Status
+    :target: http://pg-utils.readthedocs.org/en/latest/?badge=latest
+    :alt: Documentation Status
 
 When analyzing large datasets, it can often be useful to let the database do as much of the analysis as possible. While `Pandas is great at manipulating datasets that are large enough to fit on one machine, but possibly not large enough to fit into memory <http://stackoverflow.com/a/14268804/554546>`_, concerns over performance and data security can sometimes make analysis in the database more convenient.
 
