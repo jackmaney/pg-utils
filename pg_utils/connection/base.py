@@ -18,10 +18,10 @@ class Connection(object):
     :param str env_password: The name of the environment variable to use for your password.
     :param str env_hostname: The name of the environment variable to use for the hostname.
     :param str env_database: The name of the environment variable to use for the database.
-    :param dict other_connection_kwargs: Other keyword arguments (if any)
-    that you'd like to pass to the psycopg2 ``Connection`` object.
+    :param None|dict other_connection_kwargs: Other keyword arguments (if any) that you'd like to pass to the psycopg2 ``Connection`` object.
 
-    :ivar psycopg2.Connection connection: The resulting raw connection object.
+    :ivar psycopg2.extensions.connection connection: The resulting raw connection object.
+
     """
     def __init__(self, username=None, password=None,
                  hostname=None, database=None,

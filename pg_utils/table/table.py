@@ -16,35 +16,29 @@ class Table(object):
     :ivar pg_utils.connection.Connection conn: A connection to be used by this table.
     :ivar str schema: The name of the schema in which this table lies.
     :ivar str table_name: The name of the given table within the above schema.
-    :ivar tuple[str] _column_names: A list of column names for the table, as found in the database.
-    :ivar tuple[str] numeric_columns: A list of column names corresponding
-    to the _column_names in the table that have some kind of number datatype (``int``, ``float8``, ``numeric``, etc).
-    :ivar dict[str, str] column_data_types: A dictionary giving the data type of each column (given by the column names
-    as found in the ``_column_names`` attribute above).
+    :ivar tuple[str] column_names: A list of column names for the table, as found in the database.
+    :ivar tuple[Column] columns: A tuple of :class:`Column` objects.
+    :ivar tuple[str] numeric_columns: A list of column names corresponding to the column_names in the table that have some kind of number datatype (``int``, ``float8``, ``numeric``, etc).
     """
 
     def __init__(self, conn, schema, table_name,
-                 columns=None, all_columns=None, all_column_data_types=None,
-                 check_existence=True, debug=False):
+                 columns=None, check_existence=True, debug=False):
         """
 
-        :param pg_utils.connection.Connection conn:
+        :param pg_utils.connection.Connection conn: A connection object that's used to fetch data and metadata.
         :param str schema: The name of the schema in which this table lies.
         :param str table_name: The name of the given table within the above schema.
-        :param str|list[str]|tuple[str] columns: An iterable
-        :param all_columns:
-        :param all_column_data_types:
-        :param check_existence:
-        :param debug:
-        :return:
+        :param str|list[str]|tuple[str] columns: An iterable of specified column names. It's used by the ``__getitem__`` magic method, so you shouldn't need to fiddle with this.
+        :param bool check_existence: If enabled, an extra check is made to ensure that the table referenced by this object actually exists in the database.
+        :param bool debug: Enable to get some extra logging that's useful for debugging stuff.
         """
 
         self.conn = conn
         self._schema = schema
         self._table_name = table_name
-        self._column_names = columns
-        self._all_column_names = all_columns
-        self.all_column_data_types = all_column_data_types
+        self.column_names = columns
+        self._all_column_names = None
+        self._all_column_data_types = None
         self.check_existence = check_existence
         self.debug = debug
 
@@ -70,8 +64,7 @@ class Table(object):
         :param pg_utils.connection.Connection conn: A ``Connection`` object to use for creating the table.
         :param str schema: As mentioned above.
         :param str table_name: As mentioned above.
-        :param str create_stmt: A string of SQL (presumably including a "CREATE TABLE" statement for the corresponding
-        database table) that will be executed before ``__init__`` is run.
+        :param str create_stmt: A string of SQL (presumably including a "CREATE TABLE" statement for the corresponding database table) that will be executed before ``__init__`` is run.
 
         .. note::
 
@@ -110,7 +103,7 @@ class Table(object):
 
     def select_all_query(self):
 
-        return "select {} from {}".format(",".join(self._column_names), self)
+        return "select {} from {}".format(",".join(self.column_names), self)
 
     @LazyProperty
     def count(self):
@@ -121,15 +114,12 @@ class Table(object):
 
         return cur.fetchone()[0]
 
-    def head(self, num_rows=10, **kwargs):
+    def head(self, num_rows=10, **read_sql_kwargs):
         """
         Returns some of the rows, returning a corresponding Pandas DataFrame.
 
-        :param int|str num_rows: The number of rows to fetch, or ``"all"``
-        to fetch all of the rows.
-        :param dict kwargs: Any other keyword arguments that
-        you'd like to pass into ``pandas.read_sql``
-        (as documented `here <http://pandas.pydata.org/pandas-docs/stable/generated/pandas.read_sql.html>`_).
+        :param int|str num_rows: The number of rows to fetch, or ``"all"`` to fetch all of the rows.
+        :param dict read_sql_kwargs: Any other keyword arguments that you'd like to pass into ``pandas.read_sql`` (as documented `here <http://pandas.pydata.org/pandas-docs/stable/generated/pandas.read_sql.html>`_).
         :return: The resulting data frame.
         :rtype: pandas.core.frame.DataFrame
         """
@@ -137,32 +127,37 @@ class Table(object):
         if (not isinstance(num_rows, six.integer_types) or num_rows <= 0) and \
                         num_rows != "all":
             raise ValueError(
-                    "'num_rows': Expected a positive integer or 'all'")
+                "'num_rows': Expected a positive integer or 'all'")
 
         query = self.select_all_query()
 
         if num_rows != "all":
             query += " limit {}".format(num_rows)
 
-        result = pd.read_sql(query, self.conn, **kwargs)
+        result = pd.read_sql(query, self.conn, **read_sql_kwargs)
 
-        if len(self._column_names) == 1:
-            result = result[self._column_names[0]]
+        if len(self.column_names) == 1:
+            result = result[self.column_names[0]]
 
         return result
 
     @LazyProperty
     def shape(self):
         """
-        As in the property of Pandas DataFrames by the same name, this gives a tuple showing the dimensions of the table: ``(number of rows, number of _column_names)``
+        As in the property of Pandas DataFrames by the same name, this gives a tuple showing the dimensions of the table: ``(number of rows, number of columns)``
         """
 
-        return self.count, len(self._column_names)
+        return self.count, len(self.column_names)
 
     @LazyProperty
     def dtypes(self):
+        """
+        Mimics the `pandas.DataFrame.dtypes` property, giving a Series of dtypes (given as strings) corresponding to each column.
+        :return: The Series of dtypes.
+        :rtype: pd.Series
+        """
 
-        return pd.Series([c.dtype for c in self.columns], index=self._column_names)
+        return pd.Series([c.dtype for c in self.columns], index=self.column_names)
 
     def get_dtype_counts(self):
 
@@ -174,11 +169,20 @@ class Table(object):
             counts[dt] += 1
 
         return pd.Series(
-                [counts[dt] for dt in sorted(list(counts.keys()))],
-                index=sorted(list(counts.keys()))
+            [counts[dt] for dt in sorted(list(counts.keys()))],
+            index=sorted(list(counts.keys()))
         )
 
     def describe(self, columns=None, percentiles=None, type_="continuous"):
+        """
+        Mimics the ``pandas.DataFrame.describe`` method, getting basic statistics of each numeric column.
+
+        :param None|list[str] columns: A list of column names to which the description should be restricted. If not specified, then all numeric columns will be included.
+        :param list[float]|None percentiles: A list of percentiles (given as numbers between 0 and 1) to compute. If not specified, quartiles will be used (ie 0.25, 0.5, 0.75).
+        :param str type_: Specifies whether the percentiles are to be taken as discrete or continuous. Must be one of `"discrete"` or `"continuous"`.
+        :return: A series representing the statistical description for each column. The format is the same as the output of ``pandas.DataFrame.describe``.
+        :rtype: pd.DataFrame
+        """
 
         if columns is None:
             columns = self.numeric_columns
@@ -244,69 +248,84 @@ class Table(object):
 
     def _process_columns(self):
 
-        self._all_column_names = self._all_column_names or [x for x in self._all_column_metadata.column_name]
-        self.all_column_data_types = self.all_column_data_types or {
+        self._all_column_names = [x for x in self._all_column_metadata.column_name]
+        self._all_column_data_types = {
             row["column_name"]: row["data_type"]
             for i, row in self._all_column_metadata.iterrows()
             }
 
-        if self._column_names is None:
-            self._column_names = tuple(x for x in self._all_column_names)
-        elif isinstance(self._column_names, six.string_types):
-            self._column_names = (self._column_names,)
+        if self.column_names is None:
+            self.column_names = tuple(x for x in self._all_column_names)
+        elif isinstance(self.column_names, six.string_types):
+            self.column_names = (self.column_names,)
 
-        if [x for x in self._column_names if x not in self._all_column_names]:
-            raise NoSuchColumnError(str([x for x in self._column_names if x not in self._all_column_names]))
+        if [x for x in self.column_names if x not in self._all_column_names]:
+            raise NoSuchColumnError(str([x for x in self.column_names if x not in self._all_column_names]))
 
         self.all_columns = tuple(
-                Column(col, self) for col in self._all_column_names
+            Column(col, self) for col in self._all_column_names
         )
 
         self.columns = tuple(
-                col for col in self.all_columns if col.name in self._column_names
+            col for col in self.all_columns if col.name in self.column_names
         )
 
     def _get_column_by_name(self, name):
 
-        return self.columns[self._column_names.index(name)]
+        return self.columns[self.column_names.index(name)]
 
     @LazyProperty
-    def all_numeric_columns(self):
+    def _all_numeric_columns(self):
         return [x for x in self._all_column_names
-                if self.all_column_data_types[x] in numeric_datatypes]
+                if self._all_column_data_types[x] in numeric_datatypes]
 
     @LazyProperty
     def numeric_columns(self):
+        """
+        A tuple of names belonging to columns that have a numeric datatype.
+        """
         return tuple(
-                col for col in self._column_names
-                if self.column_data_types[col] in numeric_datatypes
+            col for col in self.column_names
+            if self.column_data_types[col] in numeric_datatypes
         )
 
     @LazyProperty
-    def all_numeric_array_columns(self):
+    def _all_numeric_array_columns(self):
         return [col for col in self._all_column_names
-                if self.all_column_data_types[col][-2:] == "[]"
-                and self.all_column_data_types[col][:-2] in numeric_datatypes]
+                if self._all_column_data_types[col][-2:] == "[]"
+                and self._all_column_data_types[col][:-2] in numeric_datatypes]
 
     @LazyProperty
     def numeric_array_columns(self):
+        """
+            A tuple of names belonging to columns that are an array of a numeric datatype (eg ``int[]``, ``double precision[]``, etc).
+        """
         return tuple(
-                col for col in self.all_numeric_array_columns if col in self._column_names
+            col for col in self._all_numeric_array_columns if col in self.column_names
         )
 
     @LazyProperty
     def column_data_types(self):
+        """
+        A dictionary mapping column names to their corresponding datatypes.
+        """
         return {
-            col: data_type for col, data_type in self.all_column_data_types.items()
-            if col in self._column_names
+            col: data_type for col, data_type in self._all_column_data_types.items()
+            if col in self.column_names
             }
 
     @property
     def schema(self):
+        """
+        The name of the schema.
+        """
         return self._schema
 
     @property
     def table_name(self):
+        """
+        The name of the table (without the schema included).
+        """
         return self._table_name
 
     @property
@@ -347,11 +366,11 @@ class Table(object):
     def __getitem__(self, column_list):
 
         if isinstance(column_list, six.string_types):
-            if column_list in self._column_names:
+            if column_list in self.column_names:
                 result = getattr(self, column_list)
             else:
                 raise KeyError("Column '{}' not found in table '{}'".format(
-                        column_list, self
+                    column_list, self
                 ))
         else:
 
@@ -361,9 +380,7 @@ class Table(object):
 
     def __str__(self):
         """
-        The string representation of a ``Table`` object is the
-        fully-qualified table name, as represented by the
-        ``name`` property above.
+        The string representation of a ``Table`` object is the fully-qualified table name, as represented by the ``name`` property above.
         """
         return self.name
 
@@ -372,5 +389,5 @@ class Table(object):
 
     def __del__(self):
 
-        for col in self._column_names:
+        for col in self.column_names:
             del col

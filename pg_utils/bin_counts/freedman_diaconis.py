@@ -13,16 +13,16 @@ def num_bins(column, desc=None):
     NOTE: This function assumes that the global variable ``desc`` has been set to a Pandas Series
     containing the description information of ``column``.
 
-    :param pg_utils.column.Column column: A column object for which bin_counts counts will be computed.
+    :param pg_utils.column.Column column: A column object for which bin counts will be computed.
     :param pd.Series desc: An optional series produced by the ``describe`` method of ``table`` containing the 25th and 75th percentiles (so that pre-computed values can be optionally passed in). If not specified, then ``table.describe`` will be called.
-    :return: The number of bin_counts to use.
+    :return: The number of bins to use.
     :rtype: int
     """
 
     desc = desc if desc is not None else column.describe(percentiles=[0.25, 0.75])
 
     if desc["count"] == 0:
-        raise ValueError("Cannot compute Freedman-Diaconis bin_counts count for a count of 0")
+        raise ValueError("Cannot compute Freedman-Diaconis bin_counts count for an empty dataset!")
 
     h = 2 * (desc["75%"] - desc["25%"]) / (desc["count"] ** (1.0 / 3.0))
 
