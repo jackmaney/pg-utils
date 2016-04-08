@@ -1,6 +1,10 @@
 pg-utils: PostgreSQL Utils
 ==========================
 
+[![PyPI version](https://badge.fury.io/py/pg-utils.svg)](https://badge.fury.io/py/pg-utils)
+
+[![Documentation Status](https://readthedocs.org/projects/pg-utils/badge/?version=latest)](http://pg-utils.readthedocs.org/en/latest/?badge=latest)
+
 When analyzing large datasets, it can often be useful to let the database do as much of the analysis as possible. While `Pandas is great at manipulating datasets that are large enough to fit on one machine, but possibly not large enough to fit into memory <http://stackoverflow.com/a/14268804/554546>`_, concerns over performance and data security can sometimes make analysis in the database more convenient.
 
 This package is built for use with PostgreSQL. Support for other databases *might* follow (but don't hold your breath).
