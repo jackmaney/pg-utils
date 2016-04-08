@@ -3,10 +3,11 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to PG Utils's documentation!
-====================================
 
-Contents:
+.. include:: ../README.rst
+
+Relevant pieces of the API
+==========================
 
 .. toctree::
    :maxdepth: 2
