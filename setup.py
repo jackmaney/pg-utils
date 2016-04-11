@@ -1,5 +1,5 @@
 import setuptools
-from pg_utils.version import __version__
+from pg_utils import __version__
 
 try:
     with open("README.rst") as f:

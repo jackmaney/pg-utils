@@ -1,6 +1,6 @@
 import re
 
-from .version import __version__
+from ._version import __version__
 import os
 
 base_dir = os.path.realpath(os.path.dirname(__file__))
