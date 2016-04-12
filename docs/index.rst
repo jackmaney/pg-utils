@@ -15,6 +15,7 @@ Relevant pieces of the API
    connection
    column
    table
+   util
 
 
 

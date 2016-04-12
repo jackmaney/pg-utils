@@ -6,7 +6,9 @@ from lazy_property import LazyProperty
 
 from .. import numeric_datatypes, _pretty_print
 from ..column.base import Column
+from ..connection import Connection
 from ..exception import TableDoesNotExistError, NoSuchColumnError
+from ..util import process_schema_and_conn
 
 
 class Table(object):
@@ -14,28 +16,28 @@ class Table(object):
     This class is used for representing table metadata.
 
     :ivar pg_utils.connection.Connection conn: A connection to be used by this table.
-    :ivar str schema: The name of the schema in which this table lies.
-    :ivar str table_name: The name of the given table within the above schema.
+    :ivar str name: The fully-qualified name of this table.
     :ivar tuple[str] column_names: A list of column names for the table, as found in the database.
     :ivar tuple[Column] columns: A tuple of :class:`Column` objects.
     :ivar tuple[str] numeric_columns: A list of column names corresponding to the column_names in the table that have some kind of number datatype (``int``, ``float8``, ``numeric``, etc).
     """
 
-    def __init__(self, conn, schema, table_name,
-                 columns=None, check_existence=True, debug=False):
+    @process_schema_and_conn
+    def __init__(self, table_name, schema=None, conn=None, columns=None, check_existence=True, debug=False):
         """
 
-        :param pg_utils.connection.Connection conn: A connection object that's used to fetch data and metadata.
-        :param str schema: The name of the schema in which this table lies.
-        :param str table_name: The name of the given table within the above schema.
+        :param str table_name: The name of the table in the database. If it's qualified with a schema, then leave the ``schema`` argument alone.
+        :param None|str schema: The name of the schema in which this table lies. If unspecified and the value of ``table_name`` doesn't include a schema, then the (OS-specified) username of the given user is taken to be the schema.
+        :param None|pg_utils.connection.Connection conn: A connection object that's used to fetch data and metadata. If not specified, a new connection is made with default arguments provided for username, password, etc.
         :param str|list[str]|tuple[str] columns: An iterable of specified column names. It's used by the ``__getitem__`` magic method, so you shouldn't need to fiddle with this.
         :param bool check_existence: If enabled, an extra check is made to ensure that the table referenced by this object actually exists in the database.
         :param bool debug: Enable to get some extra logging that's useful for debugging stuff.
         """
 
-        self.conn = conn
-        self._schema = schema
         self._table_name = table_name
+        self._schema = schema
+        self.conn = conn
+
         self.column_names = columns
         self._all_column_names = None
         self._all_column_data_types = None
@@ -55,14 +57,12 @@ class Table(object):
             raise TableDoesNotExistError("Table {} does not exist".format(self))
 
     @classmethod
-    def create(cls, conn, schema,
-               table_name, create_stmt,
+    @process_schema_and_conn
+    def create(cls, table_name, create_stmt, conn=None, schema=None,
                *args, **kwargs):
         """
         This is the constructor that's easiest to use when creating a new table.
 
-        :param pg_utils.connection.Connection conn: A ``Connection`` object to use for creating the table.
-        :param str schema: As mentioned above.
         :param str table_name: As mentioned above.
         :param str create_stmt: A string of SQL (presumably including a "CREATE TABLE" statement for the corresponding database table) that will be executed before ``__init__`` is run.
 
@@ -71,25 +71,49 @@ class Table(object):
             The statement ``drop table if exists schema.table_name;`` is
             executed **before** the SQL in ``create_stmt`` is executed.
 
+        :param None|pg_utils.connection.Connection conn: A ``Connection`` object to use for creating the table. If not specified, a new connection will be created with no arguments. Look at the docs for the Connection object for more information.
+        :param None|str schema: A specified schema (optional).
+
         :param args: Other positional arguments to pass to the initializer.
         :param kwargs: Other keyword arguments to pass to the initializer.
         :return: The corresponding ``Table`` object *after* the ``create_stmt`` is executed.
         """
 
+        update_kwargs = {"check_existence": False, "conn": conn, "schema": schema}
+
         cur = conn.cursor()
-        cur.execute("drop table if exists {}.{} cascade;".format(schema, table_name))
+
+        drop_stmt = "drop table if exists {} cascade;".format(table_name)
+
+        if schema is not None:
+            drop_stmt = "drop table if exists {}.{} cascade;".format(schema, table_name)
+
+        cur.execute(drop_stmt)
         conn.commit()
         cur.execute(create_stmt)
         conn.commit()
 
-        if not kwargs.get("check_existence"):
-            kwargs["check_existence"] = False
+        kwargs.update(update_kwargs)
 
-        return cls(conn, schema, table_name, *args, **kwargs)
+        return cls(table_name, *args, **kwargs)
 
     @classmethod
     def from_table(cls, table, *args, **kwargs):
+        """
+        This class method constructs a table from a given table. Used to give a fresh ``Table`` object with different columns, but all other parameters the same as the given table.
+
+        If the ``columns`` attribute only specifies one column, then a :class:`Column` object will be returned.
+        :param Table table: The table object from which the output will be created.
+        :param list args: Any positional arguments (if any).
+        :param dict kwargs: Any keyword arguments to pass along (if any).
+        :return: Either a fresh ``Table`` or :class:`Column`, depending on whether the ``columns`` parameter is restricted to just a single column.
+        :rtype: Column|Table
+        """
         kwargs["check_existence"] = False
+
+        kwargs.update({attr: getattr(table, attr)
+                       for attr in ["conn", "schema", "debug"]})
+        kwargs.setdefault("columns", table.column_names)
 
         if "columns" in kwargs and isinstance(kwargs["columns"], six.string_types):
             col = kwargs["columns"]
@@ -97,9 +121,14 @@ class Table(object):
 
             parent = Table.from_table(table, *args, **kwargs)
 
-            return Column(col, parent)
+            result =  Column(col, parent)
 
-        return cls(table.conn, table.schema, table.table_name, *args, **kwargs)
+        else:
+
+            result = cls(table.table_name, *args, **kwargs)
+
+        return result
+
 
     def select_all_query(self):
 
@@ -260,7 +289,7 @@ class Table(object):
             self.column_names = (self.column_names,)
 
         if [x for x in self.column_names if x not in self._all_column_names]:
-            raise NoSuchColumnError(str([x for x in self.column_names if x not in self._all_column_names]))
+            raise NoSuchColumnError(", ".join([str(x) for x in self.column_names if x not in self._all_column_names]))
 
         self.all_columns = tuple(
             Column(col, self) for col in self._all_column_names
@@ -341,25 +370,32 @@ class Table(object):
         """
         cur = self.conn.cursor()
         cur.execute("drop table {} cascade".format(self))
+        self.conn.commit()
         del self
 
     @staticmethod
-    def exists(conn, schema, table_name):
+    @process_schema_and_conn
+    def exists(table_name, schema=None, conn=None):
         """
         A static method that returns whether or not the given table exists.
 
-        :param pg_utils.connection.Connection conn: A connection to the database.
-        :param str schema: The name of the schema.
+
+
         :param str table_name: The name of the table.
+        :param None|str schema: The name of the schema (or current username if not provided).
+        :param None|pg_utils.connection.Connection conn: A connection to the database. If not provided, a new connection is created with default arguments.
         :return: Whether or not the table exists.
         :rtype: bool
         """
+
+        conn = conn or Connection()
+
         cur = conn.cursor()
-        cur.execute("""
+        query = """
           select count(1) from information_schema.tables
           where table_schema='{}' and table_name='{}'
           """.format(schema, table_name)
-                    )
+        cur.execute(query)
 
         return bool(cur.fetchone()[0])
 
@@ -391,3 +427,5 @@ class Table(object):
 
         for col in self.column_names:
             del col
+
+        del self

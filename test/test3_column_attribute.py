@@ -7,27 +7,22 @@ from pg_utils import connection, table
 import os
 import numpy as np
 
-# Override to create the test table in a schema other than your own.
-user_schema = os.getenv("pg_username")
 table_name = "pg_utils_test_column_attribute"
 
 
 class TestColumnAttribute(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.conn = connection.Connection()
-        cls.table = table.Table.create(cls.conn, user_schema, table_name,
-                                       """create table {}.{} as
+        cls.table = table.Table.create(table_name,
+                                       """create table {} as
      select random() as x, random() as y
      from generate_series(1,100)
-     distributed by (x,y);""".format(user_schema, table_name))
+     distributed by (x,y);""".format(table_name))
 
     @classmethod
     def tearDownClass(cls):
-        if table.Table.exists(cls.conn, user_schema, table_name):
+        if table.Table.exists(table_name, conn=cls.table.conn):
             cls.table.drop()
-
-        cls.conn.close()
 
     def test_column_attribute(self):
         table_y = self.table.y

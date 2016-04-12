@@ -7,20 +7,17 @@ from pg_utils import connection, table
 import os
 import pandas as pd
 
-# Override to create the test table in a schema other than your own.
-user_schema = os.getenv("pg_username")
 table_name = "pg_utils_test_dtypes"
 
 class TestDtypes(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.conn = connection.Connection()
-        cls.table = table.Table.create(cls.conn, user_schema, table_name,
-                                            """create table {}.{} as
+        cls.table = table.Table.create(table_name,
+                                            """create table {} as
           select x::int as x, random() as y, random() as z, 'abc'::text as w
           from generate_series(1,100) x
-          distributed by (x,y);""".format(user_schema, table_name))
+          distributed by (x,y);""".format(table_name))
 
     def test_dtypes(self):
         dtypes = self.table.dtypes

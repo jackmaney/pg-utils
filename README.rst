@@ -12,6 +12,11 @@ When analyzing large datasets, it can often be useful to let the database do as 
 
 This package is built for use with PostgreSQL. Support for other databases *might* follow (but don't hold your breath).
 
+Note
+----
+
+The ``Table`` API has significantly changed from ``0.3.x`` to ``0.4.0``. In particular, schema and connection parameters are now optional (replaced with your username and a fresh connection, respectively). This leaves the table name as the only required parameter for many of these methods. If ``table_name`` is already qualified with a schema (eg ``"foo.bar"``), then pg-utils will Do The Right Thing and just set ``schema="foo"`` and ``table_name="bar"``.
+
 Goals
 -----
 

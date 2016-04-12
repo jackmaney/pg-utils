@@ -1,5 +1,5 @@
 jinja2
-lazy-property
+lazy-property>=0.0.1
 pandas
 psycopg2
 six
