@@ -53,7 +53,7 @@ class Table(object):
 
     def _validate(self):
 
-        if self.check_existence and not Table.exists(self.conn, self.schema, self.table_name):
+        if self.check_existence and not Table.exists(self.table_name, conn=self.conn, schema=self.schema):
             raise TableDoesNotExistError("Table {} does not exist".format(self))
 
     @classmethod

@@ -12,6 +12,59 @@ When analyzing large datasets, it can often be useful to let the database do as 
 
 This package is built for use with PostgreSQL. Support for other databases *might* follow (but don't hold your breath).
 
+Wait, what? Why?!?
+------------------
+
+Let's illustrate with a few examples. To begin with, making a connection is simple:
+
+::
+
+    In [1]: from pg_utils import connection, table
+
+    In [2]: conn = connection.Connection()
+
+The environment variables ``pg_username``, ``pg_password``, ``pg_hostname``, and ``pg_database`` can be used to store values for the corresponding connection information. Of course, any of the username, password, hostname, or database can be overridden.
+
+Moving on, let's build a simple table consisting of one million rows with one column chosen randomly and another sampled from the standard normal distribution (via the `Box-Muller transform <https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform>`_).
+
+::
+
+    In [1]: from pg_utils import table
+
+    In [2]: t = table.Table.create("pg_utils_test",
+       ...:         """create table pg_utils_test as
+                        select random() as x,
+       ...:             sqrt(-2 * ln(u1))*cos(2*PI()*u2) as y
+       ...:             from(
+       ...:                 select random() as u1, random() as u2
+       ...:                 from generate_series(1, 1000000)
+       ...:             )a""")
+
+The object ``t`` is a metadata object. It doesn't hold any of the actual data within the table. However, we have a limited subset of the Pandas API that works via the database. For example:
+
+::
+
+    In [3]: t.describe()
+    Out[3]:
+                          x               y
+    count    1000000.000000  1000000.000000
+    mean           0.499628       -0.000075
+    std_dev        0.288671        0.999630
+    minimum        0.000001       -4.589661
+    25%            0.249420       -0.672603
+    50%            0.499709        0.000695
+    75%            0.749733        0.673413
+    maximum        0.999999        4.867347
+
+
+Note that *none* of those calculations are done locally. They're all done in the database.
+
+Also, ``t.x.distplot(bins=1000)`` and ``t.y.distplot(bins=1000)`` produce the following histograms (with KDEs):
+
+.. image:: img/x.png
+
+.. image:: img/y.png
+
 Note
 ----
 
