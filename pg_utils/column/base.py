@@ -49,6 +49,23 @@ class Column(object):
         return query
 
     @LazyProperty
+    def is_unique(self):
+        """
+        Determines whether or not the values of this column are all unique (ie whether this column is a unique identifier for the table).
+        :return: Whether or not this column contains unique values.
+        :rtype: bool
+        """
+
+        cur = self.parent_table.conn.cursor()
+
+        cur.execute("""select {}
+          from {}
+          group by 1 having count(1) > 1""".format(self, self.parent_table))
+
+        return cur.fetchone() is None
+
+
+    @LazyProperty
     def dtype(self):
         """
         The ``dtype`` of this column (represented as a string).
