@@ -8,7 +8,7 @@ from .. import numeric_datatypes, _pretty_print
 from ..column.base import Column
 from ..connection import Connection
 from ..exception import TableDoesNotExistError, NoSuchColumnError
-from ..util import process_schema_and_conn
+from ..util import process_schema_and_conn, seaborn_required
 
 
 class Table(object):
@@ -254,6 +254,18 @@ class Table(object):
         result = pd.DataFrame(result, columns=columns, index=index)
 
         return result
+
+    @seaborn_required
+    def pairplot(self, **kwargs):
+        """Yields a Seaborn pairplot for all of the columns of this table that are of a numeric datatype.
+
+        :param dict kwargs: Optional keyword arguments to pass into `seaborn.pairplot <https://stanford.edu/~mwaskom/software/seaborn/generated/seaborn.pairplot.html#seaborn.pairplot>`_.
+        :return: The grid of plots.
+        """
+
+        import seaborn
+        return seaborn.pairplot(self[self.numeric_columns].head("all"), **kwargs)
+
 
     @LazyProperty
     def _all_column_metadata(self):

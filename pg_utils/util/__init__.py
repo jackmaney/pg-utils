@@ -107,3 +107,22 @@ def process_schema_and_conn(f):
         return f(*args, **kwargs)
 
     return decorator
+
+
+def seaborn_required(f):
+    """
+    This decorator makes sure that seaborn is imported before the function is run.
+    """
+
+    @wraps(f)
+    def decorator(*args, **kwargs):
+        try:
+            import seaborn
+            import numpy as np
+        except ImportError as e:
+            raise ImportError(
+                "You do not have seaborn installed (or there was an issue importing it). Please install seaborn (or pg-utils[graphics])")
+
+        return f(*args, **kwargs)
+
+    return decorator

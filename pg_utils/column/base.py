@@ -3,8 +3,10 @@ import pandas as pd
 from lazy_property import LazyProperty
 
 from . import _describe_template
+from .plot import Plotter
 from .. import bin_counts
 from .. import numeric_datatypes, _pretty_print
+from ..util import seaborn_required
 
 
 class Column(object):
@@ -16,6 +18,7 @@ class Column(object):
 
     Note that the Series represented by these columns have the default index (ie non-negative, consecutive integers starting at zero). Thus, for the portion of the Pandas Series API mocked here, we need not worry about multilevel (hierarchical) indices.
     """
+
     def __init__(self, name, parent_table):
         """
         :param str name: The name of the column. Required.
@@ -29,6 +32,7 @@ class Column(object):
         # Only used when the values are supposed to be sorted.
         self.sort = False
         self.ascending = True
+        self.plot = Plotter(self)
 
     def select_all_query(self):
         """
@@ -59,6 +63,33 @@ class Column(object):
         cur.execute("select distinct {} from {}".format(self, self.parent_table))
         return np.array([x[0] for x in cur.fetchall()])
 
+    def hist(self, **kwargs):
+
+        return self.plot.hist(**kwargs)
+
+    def head(self, num_rows=10):
+        """
+        Fetches some values of this column.
+
+        :param int|str num_rows: Either a positive integer number of values or the string `"all"` to fetch all values
+        :return: A NumPy array of the values
+        :rtype: np.array
+        """
+
+        if (isinstance(num_rows, int) and num_rows < 0) or \
+                        num_rows != "all":
+            raise ValueError("num_rows must be a positive integer or the string 'all'")
+
+        query = self.select_all_query()
+
+        if num_rows != "all":
+            query += " limit {}".format(num_rows)
+
+        cur = self.parent_table.conn.cursor()
+
+        cur.execute(query)
+        return np.array([x[0] for x in cur.fetchall()])
+
     @LazyProperty
     def is_unique(self):
         """
@@ -74,7 +105,6 @@ class Column(object):
           group by 1 having count(1) > 1""".format(self, self.parent_table))
 
         return cur.fetchone() is None
-
 
     @LazyProperty
     def dtype(self):
@@ -144,6 +174,7 @@ class Column(object):
 
         return pd.Series(cur.fetchone()[1:], index=index)
 
+    @seaborn_required
     def distplot(self, bins=None, **kwargs):
         """
         Produces a ``distplot``. See `the seaborn docs <http://stanford.edu/~mwaskom/software/seaborn/generated/seaborn.distplot.html>`_ on ``distplot`` for more information.
@@ -154,12 +185,7 @@ class Column(object):
         :param dict kwargs: A dictionary of options to pass on to `seaborn.distplot <http://stanford.edu/~mwaskom/software/seaborn/generated/seaborn.distplot.html>`_.
         """
 
-        try:
-            import seaborn
-            import numpy as np
-        except ImportError as e:
-            raise ImportError(
-                "You do not have seaborn installed (or there was an issue importing it). Please install seaborn (or pg-utils[graphics])")
+        import seaborn
 
         bc = bin_counts.counts(self, bins=bins)
 

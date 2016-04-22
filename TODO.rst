@@ -16,8 +16,8 @@ TODO
     * ``dropna`` and ``fillna``
     * ``pivot``
     * ``nlargest``, ``nsmallest``
-    * ``plot`` as per the new plotting API (ie ``df.plot.line(...)`` instead of ``df.plot(kind="line",...)``
+    * ``plot`` as per the new plotting API (ie ``df.plot.line(...)`` instead of ``df.plot(kind="line",...)`` **Done**
 
 
 * Refactor to have a ``Column`` class more closely matching a Pandas Series class. **Done**
-* For initializers, allow ``conn`` to be have a default of ``None`` so that connections will have a default value of ``pg_utils.connection.Connection()``. Likewise with ``schema`` and ``"public"``.
+* For initializers, allow ``conn`` to be have a default of ``None`` so that connections will have a default value of ``pg_utils.connection.Connection()``. Likewise with ``schema`` and ``"public"``. **Done**
