@@ -202,6 +202,40 @@ class Table(object):
             index=sorted(list(counts.keys()))
         )
 
+    def sort_values(self, by, ascending=True, **sql_kwargs):
+        """
+        Mimicks the `pandas.DataFrame.sort_values method <http://pandas.pydata.org/pandas-docs/stable/generated/pandas.DataFrame.sort_values.html#pandas.DataFrame.sort_values>`_.
+
+        :param str|list[str] by: A string or list of strings representing one or more column names by which to sort.
+        :param bool|list[bool] ascending: Whether to sort ascending or descending. This must match the number of columns by which we're sorting, although if it's just a single value, it'll be used for all columns.
+        :param dict sql_kwargs: A dictionary of keyword arguments passed into `pandas.read_sql <http://pandas.pydata.org/pandas-docs/stable/generated/pandas.read_sql.html>`_.
+        :return: Values of the sorted DataFrame.
+        :rtype: pandas.DataFrame
+        """
+
+        sql = self.select_all_query()
+
+        if isinstance(by, str):
+            by = [by]
+
+        if not set(by) <= set(self.column_names):
+            raise ValueError("Column names '{}' not in table {}".format(
+                ",".join(list(set(by) - set(self.column_names))), self
+            ))
+
+        if isinstance(ascending, bool):
+            ascending = [ascending] * len(by)
+
+        if len(by) != len(ascending):
+            raise ValueError("Mismatch between columns to sort by ({}), and ascending list ({})".format(by, ascending))
+
+        pairs = [[by[i], "" if ascending[i] else " desc"] for i in list(range(len(by)))]
+
+        sql += " order by " + ", ".join(["".join(p) for p in pairs])
+
+        return pd.read_sql(sql, self.conn, **sql_kwargs)
+
+
     def describe(self, columns=None, percentiles=None, type_="continuous"):
         """
         Mimics the ``pandas.DataFrame.describe`` method, getting basic statistics of each numeric column.

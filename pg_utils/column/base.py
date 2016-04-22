@@ -29,9 +29,6 @@ class Column(object):
         self.name = name
         self.is_numeric = parent_table._all_column_data_types[name] in numeric_datatypes
 
-        # Only used when the values are supposed to be sorted.
-        self.sort = False
-        self.ascending = True
         self.plot = Plotter(self)
 
     def select_all_query(self):
@@ -42,15 +39,31 @@ class Column(object):
         :rtype: str
         """
 
-        query = "select {} from {}".format(self, self.parent_table)
+        return "select {} from {}".format(self, self.parent_table)
 
-        if self.sort:
-            query += " order by 1"
+    def sort_values(self, ascending=True, limit=None, **sql_kwargs):
+        """
+        Mimics the method `pandas.Series.sort_values <http://pandas.pydata.org/pandas-docs/stable/generated/pandas.Series.sort_values.html#pandas.Series.sort_values>`_.
 
-            if not self.ascending:
-                query += " desc"
+        :param int|None limit: Either a positive integer for the number of rows to take or ``None`` to take all.
+        :param bool ascending: Sort ascending vs descending.
+        :param dict sql_kwargs: A dictionary of keyword arguments passed into `pandas.read_sql <http://pandas.pydata.org/pandas-docs/stable/generated/pandas.read_sql.html>`_.
+        :return: The resulting series.
+        :rtype: pandas.Series
+        """
 
-        return query
+        if limit is not None and (not isinstance(limit, int) or limit <= 0):
+            raise ValueError("limit must be a positive integer or None (got {})".format(limit))
+
+        sql = self.select_all_query() + " order by 1"
+
+        if not ascending:
+            sql += " desc"
+
+        if limit is not None:
+            sql += " limit {}".format(limit)
+
+        return pd.read_sql(sql, self.parent_table.conn, **sql_kwargs)[self.name]
 
     def unique(self):
         """
