@@ -3,8 +3,7 @@ import sys
 sys.path = ['..'] + sys.path
 
 import unittest
-from pg_utils import connection, table
-import os
+from pg_utils import table
 import numpy as np
 
 table_name = "pg_utils_test_column_attribute"
@@ -21,8 +20,7 @@ class TestColumnAttribute(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        if table.Table.exists(table_name, conn=cls.table.conn):
-            cls.table.drop()
+        cls.table.drop()
 
     def test_column_attribute(self):
         table_y = self.table.y

@@ -26,10 +26,6 @@ def tearDownModule():
     t1.drop()
     t2.drop()
 
-    global conn
-    if conn is not None:
-        conn.close()
-
 
 class TestTableBasic(unittest.TestCase):
     def test_created_basic(self):

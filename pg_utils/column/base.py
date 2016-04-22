@@ -48,6 +48,17 @@ class Column(object):
 
         return query
 
+    def unique(self):
+        """
+        Returns an array of unique values in this column. Includes ``null`` (represented as ``None``).
+        :return: The unique values.
+        :rtype: np.array
+        """
+
+        cur = self.parent_table.conn.cursor()
+        cur.execute("select distinct {} from {}".format(self, self.parent_table))
+        return np.array([x[0] for x in cur.fetchall()])
+
     @LazyProperty
     def is_unique(self):
         """

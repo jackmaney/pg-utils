@@ -30,8 +30,7 @@ class TestDistPlot(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        if table.Table.exists(table_name):
-            test_table.drop()
+        test_table.drop()
 
     def test_table_exists(self):
         self.assertTrue(table.Table.exists(test_table.name, conn=test_table.conn))
