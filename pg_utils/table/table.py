@@ -1,3 +1,4 @@
+import tempfile
 from collections import defaultdict
 
 import pandas as pd
@@ -121,14 +122,13 @@ class Table(object):
 
             parent = Table.from_table(table, *args, **kwargs)
 
-            result =  Column(col, parent)
+            result = Column(col, parent)
 
         else:
 
             result = cls(table.table_name, *args, **kwargs)
 
         return result
-
 
     def select_all_query(self):
 
@@ -202,6 +202,96 @@ class Table(object):
             index=sorted(list(counts.keys()))
         )
 
+    def insert(self, row, columns=None):
+        """
+        Inserts a single tuple into the table.
+
+        :param list|pandas.Series row: A list or Series of items to insert. If a list, its length must match up with the number of columns that we'll insert. If it's a series, the column names must be contained within the index.
+        :param None|list[str]|tuple[str] columns: An iterable of column names to use, that must be contained within this table. If not specified, all of the columns are taken.
+        :return: Returns a boolean indicating success.
+        :rtype: bool
+        """
+
+        if columns is None:
+
+            columns = self.column_names
+
+        elif any([c for c in columns if c not in self.column_names]):
+            raise ValueError("The following columns are not in table {}: {}".format(
+                self, ",".join([str(c) for c in columns if c not in self.column_names])
+            ))
+
+        columns = list(columns)
+
+        if isinstance(row, pd.Series):
+            if any([x for x in row.index if x not in columns]):
+                raise ValueError(
+                    "The following index elements are not specified columns: {}".format(
+                        ",".join([str(x) for x in row.index if x not in columns])
+                    ))
+            columns = [c for c in columns if c in row.index]
+
+        if len(columns) != len(row):
+            raise ValueError(
+                "Length of row to be inserted is not the same as the number of columns selected ({} vs {})".format(
+                    len(row), len(columns)))
+
+        stmt = """insert into {} ({}) values ({});""".format(
+            self, ", ".join(columns), ", ".join(["%s"] * len(columns))
+        )
+
+        cur = self.conn.cursor()
+
+        cur.execute(stmt, tuple(row))
+
+        return bool(cur.rowcount)
+
+    def insert_csv(self, file_name, columns=None, header=True, sep=",", null="", size=8192):
+        """
+        A wrapper around the `copy_expert <http://initd.org/psycopg/docs/cursor.html#cursor.copy_expert>`_ method of the psycopg2 cursor class to do a bulk insert into the table.
+
+        :param str file_name: The name of the CSV file.
+        :param None|list[str]|tuple[str] columns: An iterable of column names to use, that must be contained within this table. If not specified, all of the columns are taken.
+        :param bool header: Indicates whether or not the file has a header.
+        :param str sep: The separator character.
+        :param str null: The string used to indicate null values.
+        :param int size: The size of the buffer that ``psycopg2.cursor.copy_expert`` uses.
+        """
+
+        column_str = "" if columns is None else " ({})".format(",".join([str(x) for x in columns]))
+
+        cmd = "copy {}{} from stdin delimiter '{}' null '{}' csv".format(self,
+                                                                         column_str,
+                                                                         sep, null)
+        if header:
+            cmd += " header"
+        else:
+            cmd += " no header"
+
+        with open(file_name) as f:
+            cur = self.conn.cursor()
+            cur.copy_expert(sql=cmd, file=f, size=size)
+            self.conn.commit()
+            cur.close()
+
+    def insert_dataframe(self, data_frame, encoding="utf8", **csv_kwargs):
+        """
+        Does a bulk insert of a given pandas DataFrame, writing it to a (temp) CSV file, and then importing it.
+
+        :param pd.DataFrame data_frame: The DataFrame that is to be inserted into this table.
+        :param str encoding: The encoding of the CSV file.
+        :param csv_kwargs: Other keyword arguments that are passed to the ``insert_csv`` method.
+        """
+
+        with tempfile.NamedTemporaryFile(mode="w", encoding=encoding) as f:
+            data_frame.to_csv(f, index=False, **csv_kwargs)
+            f.seek(0)
+            kwargs = {"columns": csv_kwargs.get("columns"),
+                      "header": csv_kwargs.get("header", True),
+                      "sep": csv_kwargs.get("sep", ","),
+                      "null": csv_kwargs.get("na_rep", "")}
+            self.insert_csv(f.name, **kwargs)
+
     def sort_values(self, by, ascending=True, **sql_kwargs):
         """
         Mimicks the `pandas.DataFrame.sort_values method <http://pandas.pydata.org/pandas-docs/stable/generated/pandas.DataFrame.sort_values.html#pandas.DataFrame.sort_values>`_.
@@ -234,7 +324,6 @@ class Table(object):
         sql += " order by " + ", ".join(["".join(p) for p in pairs])
 
         return pd.read_sql(sql, self.conn, **sql_kwargs)
-
 
     def describe(self, columns=None, percentiles=None, type_="continuous"):
         """
@@ -299,7 +388,6 @@ class Table(object):
 
         import seaborn
         return seaborn.pairplot(self[self.numeric_columns].head("all"), **kwargs)
-
 
     @LazyProperty
     def _all_column_metadata(self):
